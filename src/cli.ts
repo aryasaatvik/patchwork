@@ -7,10 +7,10 @@ import { status } from "./commands/status"
 import { drop } from "./commands/drop"
 
 const HELP = `
-patchwork - Manage patches on top of upstream repositories
+Patchwork (ptchwrk) - Manage patches on top of upstream repositories
 
 Commands:
-  init                     Initialize patchwork in current repo
+  init                     Initialize Patchwork in current repo
   export <branch>          Export a branch as a patch
   sync                     Fetch upstream and apply patches
   status                   Show patch status
@@ -37,7 +37,7 @@ async function main() {
       case "export":
         if (!args[1]) {
           console.error("Error: branch name required")
-          console.error("Usage: patchwork export <branch>")
+          console.error("Usage: ptchwrk export <branch>")
           process.exit(1)
         }
         await exportPatch(args[1])
@@ -51,7 +51,7 @@ async function main() {
       case "drop":
         if (!args[1]) {
           console.error("Error: patch name required")
-          console.error("Usage: patchwork drop <patch>")
+          console.error("Usage: ptchwrk drop <patch>")
           process.exit(1)
         }
         await drop(args[1])

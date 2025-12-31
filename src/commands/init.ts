@@ -3,7 +3,7 @@ import { mkdir } from "fs/promises"
 
 export async function init(): Promise<void> {
   const repoRoot = await getRepoRoot()
-  const patchworkDir = `${repoRoot}/.patchwork`
+  const patchworkDir = `${repoRoot}/.ptchwrk`
   const patchDir = `${patchworkDir}/patches`
 
   const configPath = `${patchworkDir}/config.json`
@@ -22,17 +22,17 @@ export async function init(): Promise<void> {
       branch: "main",
     },
     buildBranch: "patchwork-build",
-    patchDir: ".patchwork/patches",
+    patchDir: ".ptchwrk/patches",
   }
 
   await saveConfig(repoRoot, config)
 
-  console.log("Initialized patchwork in", repoRoot)
+  console.log("Initialized Patchwork in", repoRoot)
   console.log("")
   console.log("Default config:")
   console.log(`  Upstream: ${config.upstream.remote}/${config.upstream.branch}`)
   console.log(`  Build branch: ${config.buildBranch}`)
   console.log(`  Patch directory: ${config.patchDir}`)
   console.log("")
-  console.log("Edit .patchwork/config.json to customize.")
+  console.log("Edit .ptchwrk/config.json to customize.")
 }

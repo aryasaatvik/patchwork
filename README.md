@@ -1,10 +1,12 @@
-# ptchwrk
+# Patchwork
 
 Manage patches on top of upstream repositories.
 
+> **Package name:** `ptchwrk` (because `patchwork` was taken)
+
 ## Why?
 
-When you maintain local patches on top of an upstream repo (like a fork with custom features), rebasing gets messy. `ptchwrk` exports your changes as patch files that can be cleanly reapplied whenever upstream updates.
+When you maintain local patches on top of an upstream repo (like a fork with custom features), rebasing gets messy. Patchwork exports your changes as patch files that can be cleanly reapplied whenever upstream updates.
 
 ## Install
 
@@ -37,7 +39,7 @@ ptchwrk drop 001-my-feature-branch.patch
 
 ## How it works
 
-1. **init** - Creates `.patchwork/` directory with config pointing to your upstream branch
+1. **init** - Creates `.ptchwrk/` directory with config pointing to your upstream branch
 2. **export** - Generates a `.patch` file from commits unique to a branch (vs upstream)
 3. **sync** - Fetches upstream, creates a fresh build branch, applies all patches in order
 4. **status** - Shows current patches and their sizes
@@ -45,7 +47,7 @@ ptchwrk drop 001-my-feature-branch.patch
 
 ## Config
 
-`.patchwork/config.json`:
+`.ptchwrk/config.json`:
 ```json
 {
   "upstream": {
@@ -53,7 +55,7 @@ ptchwrk drop 001-my-feature-branch.patch
     "branch": "main"
   },
   "buildBranch": "patchwork-build",
-  "patchDir": ".patchwork/patches"
+  "patchDir": ".ptchwrk/patches"
 }
 ```
 

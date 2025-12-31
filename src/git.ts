@@ -43,15 +43,15 @@ export interface PatchworkConfig {
 }
 
 export async function loadConfig(repoRoot: string): Promise<PatchworkConfig> {
-  const configPath = `${repoRoot}/.patchwork/config.json`
+  const configPath = `${repoRoot}/.ptchwrk/config.json`
   const file = Bun.file(configPath)
   if (!(await file.exists())) {
-    throw new Error("Not a patchwork repository. Run 'patchwork init' first.")
+    throw new Error("Not a Patchwork repository. Run 'ptchwrk init' first.")
   }
   return file.json()
 }
 
 export async function saveConfig(repoRoot: string, config: PatchworkConfig): Promise<void> {
-  const configPath = `${repoRoot}/.patchwork/config.json`
+  const configPath = `${repoRoot}/.ptchwrk/config.json`
   await Bun.write(configPath, JSON.stringify(config, null, 2) + "\n")
 }

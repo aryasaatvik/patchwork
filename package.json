@@ -1,14 +1,14 @@
 {
   "name": "ptchwrk",
   "version": "0.1.0",
-  "description": "Manage patches on top of upstream repositories",
+  "description": "Patchwork - Manage patches on top of upstream repositories",
   "type": "module",
   "bin": {
-    "ptchwrk": "./dist/patchwork"
+    "ptchwrk": "./dist/ptchwrk"
   },
   "scripts": {
     "dev": "bun run src/cli.ts",
-    "build": "bun build src/cli.ts --compile --outfile dist/patchwork",
+    "build": "bun build src/cli.ts --compile --outfile dist/ptchwrk",
     "typecheck": "tsc --noEmit"
   },
   "repository": {
