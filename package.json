@@ -1,6 +1,6 @@
 {
   "name": "ptchwrk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Patchwork - Manage patches on top of upstream repositories",
   "type": "module",
   "bin": {

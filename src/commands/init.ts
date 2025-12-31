@@ -1,16 +1,24 @@
-import { getRepoRoot, saveConfig, type PatchworkConfig } from "../git"
+import { getRepoRoot, getRepoIdentifier, getDataDir, saveConfig, type PatchworkConfig } from "../git"
 import { mkdir } from "fs/promises"
 
-export async function init(): Promise<void> {
+export async function init(tracked: boolean = false): Promise<void> {
   const repoRoot = await getRepoRoot()
-  const patchworkDir = `${repoRoot}/.ptchwrk`
-  const patchDir = `${patchworkDir}/patches`
-
-  const configPath = `${patchworkDir}/config.json`
+  
+  let configDir: string
+  if (tracked) {
+    configDir = `${repoRoot}/.ptchwrk`
+  } else {
+    const repoId = await getRepoIdentifier(repoRoot)
+    configDir = `${getDataDir()}/${repoId}`
+  }
+  
+  const patchDir = `${configDir}/patches`
+  const configPath = `${configDir}/config.json`
   const configFile = Bun.file(configPath)
   
   if (await configFile.exists()) {
-    console.log("Patchwork already initialized in this repository")
+    console.log("Patchwork already initialized")
+    console.log(`  Config: ${configDir}`)
     return
   }
 
@@ -22,17 +30,18 @@ export async function init(): Promise<void> {
       branch: "main",
     },
     buildBranch: "patchwork-build",
-    patchDir: ".ptchwrk/patches",
+    patchDir: "patches",
   }
 
-  await saveConfig(repoRoot, config)
+  await saveConfig(configDir, config)
 
-  console.log("Initialized Patchwork in", repoRoot)
+  console.log("Initialized Patchwork")
   console.log("")
-  console.log("Default config:")
-  console.log(`  Upstream: ${config.upstream.remote}/${config.upstream.branch}`)
-  console.log(`  Build branch: ${config.buildBranch}`)
-  console.log(`  Patch directory: ${config.patchDir}`)
+  console.log(`Config: ${configDir}`)
+  console.log(`Patches: ${patchDir}`)
   console.log("")
-  console.log("Edit .ptchwrk/config.json to customize.")
+  console.log(`Upstream: ${config.upstream.remote}/${config.upstream.branch}`)
+  console.log(`Build branch: ${config.buildBranch}`)
+  console.log("")
+  console.log(`Edit ${configPath} to customize.`)
 }

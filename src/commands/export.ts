@@ -1,10 +1,10 @@
-import { exec, getRepoRoot, loadConfig } from "../git"
+import { exec, getRepoRoot, loadConfig, resolvePatchDir } from "../git"
 import { readdir } from "fs/promises"
 
 export async function exportPatch(branch: string): Promise<void> {
   const repoRoot = await getRepoRoot()
-  const config = await loadConfig(repoRoot)
-  const patchDir = `${repoRoot}/${config.patchDir}`
+  const { config, configDir } = await loadConfig(repoRoot)
+  const patchDir = resolvePatchDir(repoRoot, configDir, config.patchDir)
 
   const upstream = `${config.upstream.remote}/${config.upstream.branch}`
 
@@ -29,5 +29,5 @@ export async function exportPatch(branch: string): Promise<void> {
   await exec(`git format-patch ${upstream}..${branch} --stdout > "${patchPath}"`)
 
   console.log(`Exported ${commitCount} commit(s) from '${branch}' to:`)
-  console.log(`  ${config.patchDir}/${patchName}`)
+  console.log(`  ${patchPath}`)
 }

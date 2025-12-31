@@ -1,15 +1,16 @@
-import { exec, getRepoRoot, loadConfig, getCurrentBranch } from "../git"
+import { getRepoRoot, loadConfig, getCurrentBranch, resolvePatchDir } from "../git"
 import { readdir, stat } from "fs/promises"
 
 export async function status(): Promise<void> {
   const repoRoot = await getRepoRoot()
-  const config = await loadConfig(repoRoot)
-  const patchDir = `${repoRoot}/${config.patchDir}`
+  const { config, configDir } = await loadConfig(repoRoot)
+  const patchDir = resolvePatchDir(repoRoot, configDir, config.patchDir)
   const upstream = `${config.upstream.remote}/${config.upstream.branch}`
 
   console.log("Patchwork Status")
   console.log("================")
   console.log("")
+  console.log(`Config: ${configDir}`)
   console.log(`Upstream: ${upstream}`)
   console.log(`Build branch: ${config.buildBranch}`)
   console.log(`Current branch: ${await getCurrentBranch()}`)

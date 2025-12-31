@@ -1,10 +1,10 @@
-import { getRepoRoot, loadConfig } from "../git"
+import { getRepoRoot, loadConfig, resolvePatchDir } from "../git"
 import { readdir, unlink } from "fs/promises"
 
 export async function drop(patchName: string): Promise<void> {
   const repoRoot = await getRepoRoot()
-  const config = await loadConfig(repoRoot)
-  const patchDir = `${repoRoot}/${config.patchDir}`
+  const { config, configDir } = await loadConfig(repoRoot)
+  const patchDir = resolvePatchDir(repoRoot, configDir, config.patchDir)
 
   const patches = (await readdir(patchDir).catch(() => []))
     .filter(f => f.endsWith(".patch"))

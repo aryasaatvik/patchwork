@@ -10,7 +10,7 @@ const HELP = `
 Patchwork (ptchwrk) - Manage patches on top of upstream repositories
 
 Commands:
-  init                     Initialize Patchwork in current repo
+  init [--tracked]         Initialize Patchwork (default: ~/.local/share/patchwork/)
   export <branch>          Export a branch as a patch
   sync                     Fetch upstream and apply patches
   status                   Show patch status
@@ -18,6 +18,7 @@ Commands:
 
 Options:
   --help, -h               Show this help message
+  --tracked, -t            Store config in repo (.ptchwrk/) instead of externally
 `
 
 async function main() {
@@ -31,9 +32,11 @@ async function main() {
 
   try {
     switch (command) {
-      case "init":
-        await init()
+      case "init": {
+        const tracked = args.includes("--tracked") || args.includes("-t")
+        await init(tracked)
         break
+      }
       case "export":
         if (!args[1]) {
           console.error("Error: branch name required")

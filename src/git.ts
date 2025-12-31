@@ -1,4 +1,5 @@
 import { $ } from "bun"
+import { homedir } from "os"
 
 export async function exec(cmd: string, cwd?: string): Promise<string> {
   const result = await $`sh -c ${cmd}`.cwd(cwd ?? process.cwd()).quiet().nothrow()
@@ -42,16 +43,69 @@ export interface PatchworkConfig {
   patchDir: string
 }
 
-export async function loadConfig(repoRoot: string): Promise<PatchworkConfig> {
-  const configPath = `${repoRoot}/.ptchwrk/config.json`
-  const file = Bun.file(configPath)
-  if (!(await file.exists())) {
-    throw new Error("Not a Patchwork repository. Run 'ptchwrk init' first.")
-  }
-  return file.json()
+export interface LoadedConfig {
+  config: PatchworkConfig
+  configDir: string
 }
 
-export async function saveConfig(repoRoot: string, config: PatchworkConfig): Promise<void> {
-  const configPath = `${repoRoot}/.ptchwrk/config.json`
+export function getDataDir(): string {
+  const xdgDataHome = process.env.XDG_DATA_HOME
+  if (xdgDataHome) {
+    return `${xdgDataHome}/patchwork`
+  }
+  return `${homedir()}/.local/share/patchwork`
+}
+
+export async function getRepoIdentifier(repoRoot: string): Promise<string> {
+  const result = await execRaw("git remote get-url origin", repoRoot)
+  
+  if (result.exitCode === 0 && result.stdout) {
+    const url = result.stdout
+    // SSH: git@github.com:owner/repo.git | HTTPS: https://github.com/owner/repo.git
+    const match = url.match(/[:/]([^/:]+)\/([^/]+?)(?:\.git)?$/)
+    if (match) {
+      return `${match[1]}/${match[2]}`
+    }
+  }
+  
+  const dirName = repoRoot.split("/").pop()
+  return `unknown/${dirName ?? "repo"}`
+}
+
+export async function loadConfig(repoRoot: string): Promise<LoadedConfig> {
+  const localConfigDir = `${repoRoot}/.ptchwrk`
+  const localConfigPath = `${localConfigDir}/config.json`
+  const localFile = Bun.file(localConfigPath)
+  
+  if (await localFile.exists()) {
+    const config = await localFile.json() as PatchworkConfig
+    return { config, configDir: localConfigDir }
+  }
+  
+  const repoId = await getRepoIdentifier(repoRoot)
+  const externalConfigDir = `${getDataDir()}/${repoId}`
+  const externalConfigPath = `${externalConfigDir}/config.json`
+  const externalFile = Bun.file(externalConfigPath)
+  
+  if (await externalFile.exists()) {
+    const config = await externalFile.json() as PatchworkConfig
+    return { config, configDir: externalConfigDir }
+  }
+  
+  throw new Error("Not a Patchwork repository. Run 'ptchwrk init' first.")
+}
+
+export async function saveConfig(configDir: string, config: PatchworkConfig): Promise<void> {
+  const configPath = `${configDir}/config.json`
   await Bun.write(configPath, JSON.stringify(config, null, 2) + "\n")
+}
+
+export function resolvePatchDir(repoRoot: string, configDir: string, patchDir: string): string {
+  if (patchDir.startsWith("/")) {
+    return patchDir
+  }
+  if (patchDir.startsWith(".ptchwrk/")) {
+    return `${repoRoot}/${patchDir}`
+  }
+  return `${configDir}/${patchDir}`
 }

@@ -1,10 +1,10 @@
-import { exec, execRaw, getRepoRoot, loadConfig, getCurrentBranch } from "../git"
+import { exec, execRaw, getRepoRoot, loadConfig, getCurrentBranch, resolvePatchDir } from "../git"
 import { readdir } from "fs/promises"
 
 export async function sync(): Promise<void> {
   const repoRoot = await getRepoRoot()
-  const config = await loadConfig(repoRoot)
-  const patchDir = `${repoRoot}/${config.patchDir}`
+  const { config, configDir } = await loadConfig(repoRoot)
+  const patchDir = resolvePatchDir(repoRoot, configDir, config.patchDir)
   const upstream = `${config.upstream.remote}/${config.upstream.branch}`
   const originalBranch = await getCurrentBranch()
 
