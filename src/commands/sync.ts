@@ -24,14 +24,9 @@ export async function sync(): Promise<void> {
   console.log("")
 
   const buildBranch = config.buildBranch
-  const branchExists = (await execRaw(`git rev-parse --verify ${buildBranch}`)).exitCode === 0
-
-  if (branchExists) {
-    await exec(`git branch -D ${buildBranch}`)
-  }
 
   console.log(`Creating ${buildBranch} from ${upstream}...`)
-  await exec(`git checkout -b ${buildBranch} ${upstream}`)
+  await exec(`git checkout -B ${buildBranch} ${upstream}`)
 
   let applied = 0
   for (const patch of patches) {
