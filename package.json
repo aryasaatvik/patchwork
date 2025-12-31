@@ -1,0 +1,25 @@
+{
+  "name": "ptchwrk",
+  "version": "0.1.0",
+  "description": "Manage patches on top of upstream repositories",
+  "type": "module",
+  "bin": {
+    "ptchwrk": "./dist/patchwork"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "build": "bun build src/cli.ts --compile --outfile dist/patchwork",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aryasaatvik/patchwork.git"
+  },
+  "keywords": ["git", "patch", "upstream", "sync", "fork"],
+  "author": "Saatvik Arya",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
