@@ -1,5 +1,7 @@
 import { exec, execRaw, getRepoRoot, loadConfig, getCurrentBranch, resolvePatchDir } from "../git"
-import { readdir } from "fs/promises"
+import { readdir, readFile, writeFile, rm, mkdtemp } from "fs/promises"
+import { join } from "path"
+import { tmpdir } from "os"
 
 export async function sync(): Promise<void> {
   const repoRoot = await getRepoRoot()
@@ -33,28 +35,77 @@ export async function sync(): Promise<void> {
     const patchPath = `${patchDir}/${patch}`
     console.log(`Applying ${patch}...`)
 
-    const result = await execRaw(`git am --3way "${patchPath}"`)
+    const patchText = await readFile(patchPath, "utf-8")
+    const { message, diff, subject } = parsePatch(patchText)
+    const tempDir = await mkdtemp(join(tmpdir(), "patchwork-"))
+    const diffPath = join(tempDir, "patch.diff")
+    const messagePath = join(tempDir, "patch-message.txt")
 
-    if (result.exitCode !== 0) {
+    let applyResult: { stdout: string; stderr: string; exitCode: number } | null = null
+
+    try {
+      await writeFile(diffPath, `${diff}\n`)
+      await writeFile(messagePath, `${message}\n`)
+
+      applyResult = await execRaw(`git apply --3way "${diffPath}"`)
+
+      if (applyResult.exitCode === 0) {
+        await exec("git add -A")
+        await exec(`git commit -F "${messagePath}"`)
+        applied++
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+
+    if (!applyResult || applyResult.exitCode !== 0) {
+      const safeSubject = subject.replace(/"/g, "\\\"")
+
       console.error("")
       console.error(`Failed to apply ${patch}`)
       console.error("")
       console.error("Resolve conflicts, then run:")
-      console.error("  git am --continue")
+      console.error("  git add -A")
+      console.error(`  git commit -m "${safeSubject}"`)
       console.error("")
       console.error("Or abort with:")
-      console.error("  git am --abort")
+      console.error("  git reset --hard")
       console.error(`  git checkout ${originalBranch}`)
-      console.error("")
-      console.error("After resolving, regenerate the patch:")
-      console.error(`  git format-patch ${upstream}..HEAD --stdout > "${patchPath}"`)
       process.exit(1)
     }
-
-    applied++
   }
 
   console.log("")
   console.log(`Successfully applied ${applied} patch(es)`)
   console.log(`Build branch '${buildBranch}' is ready`)
+}
+
+function parsePatch(patchText: string): { message: string; diff: string; subject: string } {
+  const lines = patchText.split("\n")
+  const diffStart = lines.findIndex((line) => line.startsWith("diff --git "))
+
+  if (diffStart === -1) {
+    throw new Error("Invalid patch: missing diff content")
+  }
+
+  const subjectLine = lines.find((line) => line.startsWith("Subject: "))
+  const fallbackSubject = subjectLine
+    ? subjectLine.replace(/^Subject:\s*\[PATCH\]\s*/u, "").trim()
+    : "apply patch"
+
+  const headerEnd = lines.findIndex((line) => line.trim() === "")
+  let messageLines: string[] = []
+
+  if (headerEnd !== -1 && headerEnd < diffStart) {
+    messageLines = lines.slice(headerEnd + 1, diffStart)
+    while (messageLines.length > 0 && messageLines[messageLines.length - 1]?.trim() === "") {
+      messageLines.pop()
+    }
+  }
+
+  const message = messageLines.join("\n").trim() || fallbackSubject
+  const subject = message.split("\n")[0] || fallbackSubject
+  const diff = lines.slice(diffStart).join("\n")
+
+  return { message, diff, subject }
 }
