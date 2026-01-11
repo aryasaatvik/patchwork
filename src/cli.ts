@@ -14,7 +14,7 @@ Commands:
   export <branch>          Export a branch as a patch
   sync                     Fetch upstream and apply patches
   status                   Show patch status
-  drop <patch>             Remove a patch
+  drop <patch>...          Remove patch(es)
 
 Options:
   --help, -h               Show this help message
@@ -51,14 +51,16 @@ async function main() {
       case "status":
         await status()
         break
-      case "drop":
-        if (!args[1]) {
-          console.error("Error: patch name required")
-          console.error("Usage: ptchwrk drop <patch>")
+      case "drop": {
+        const patchArgs = args.slice(1)
+        if (patchArgs.length === 0) {
+          console.error("Error: at least one patch name required")
+          console.error("Usage: ptchwrk drop <patch>...")
           process.exit(1)
         }
-        await drop(args[1])
+        await drop(patchArgs)
         break
+      }
       default:
         console.error(`Unknown command: ${command}`)
         console.log(HELP.trim())
