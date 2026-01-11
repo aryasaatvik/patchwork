@@ -27,6 +27,9 @@ export async function sync(): Promise<void> {
 
   const buildBranch = config.buildBranch
 
+  // Delete existing build branch if it exists
+  await exec(`git branch -D ${buildBranch}`).catch(() => {})
+
   console.log(`Creating ${buildBranch} from ${upstream}...`)
   await exec(`git checkout -B ${buildBranch} ${upstream}`)
 
