@@ -1,6 +1,7 @@
 import { exec, getRepoRoot, loadConfig, resolvePatchDir } from "../git"
 import { readdir, writeFile } from "fs/promises"
 import { generateConventionalCommit, isOpencodeRunning } from "../utils/commit-message"
+import { getCommitMessageFromPR } from "../utils/github-pr"
 
 export async function exportPatch(branch: string): Promise<void> {
   const repoRoot = await getRepoRoot()
@@ -30,25 +31,35 @@ export async function exportPatch(branch: string): Promise<void> {
   // Get the diff for all commits (squashed patch)
   const diff = await exec(`git diff --binary $(git merge-base ${upstream} ${branch}) ${branch}`)
 
-  // Generate AI commit message
+  // Generate commit message with priority: PR > AI > fallback
   let commitMessage: string | null = null
-  let aiMessageGenerated = false
+  let source = "fallback"
 
-  if (await isOpencodeRunning()) {
+  // Priority 1: Try to get commit message from PR
+  const prMessage = await getCommitMessageFromPR(branch)
+  if (prMessage) {
+    commitMessage = prMessage
+    source = "pr"
+    console.log("Using PR title and description for commit message")
+  }
+
+  // Priority 2: Try AI if no PR message
+  if (!commitMessage && (await isOpencodeRunning())) {
     console.log("Generating commit message with AI...")
     commitMessage = await generateConventionalCommit(diff)
     if (commitMessage) {
-      aiMessageGenerated = true
+      source = "ai"
       console.log("AI-generated commit message:")
       console.log(`  ${commitMessage.split("\n")[0]}`)
     }
   }
 
-  // Fallback if AI failed or not available
+  // Priority 3: Fallback to branch name heuristic
   const fallbackMessage = createFallbackCommitMessage(branch, safeBranchName)
   const finalMessage = commitMessage ?? fallbackMessage
-  if (!commitMessage && !aiMessageGenerated) {
-    console.log("AI not available, using fallback commit message")
+
+  if (source === "fallback") {
+    console.log("No PR or AI available, using branch-based commit message")
   }
 
   // Create the patch file with proper headers
@@ -57,6 +68,7 @@ export async function exportPatch(branch: string): Promise<void> {
 
   console.log(`Exported ${commitCount} commit(s) from '${branch}' to:`)
   console.log(`  ${patchPath}`)
+  console.log(`Commit: ${finalMessage.split("\n")[0]}`)
 }
 
 function createFallbackCommitMessage(branch: string, safeBranchName: string): string {
