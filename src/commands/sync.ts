@@ -1,5 +1,5 @@
-import { exec, execRaw, getRepoRoot, loadConfig, getCurrentBranch } from "../git"
-import { readFile, writeFile, rm, mkdtemp, cp } from "fs/promises"
+import { exec, execRaw, getRepoRoot, loadConfig, getCurrentBranch, getDataDir, getRepoIdentifier } from "../git"
+import { readFile, writeFile, rm, mkdtemp, cp, mkdir } from "fs/promises"
 import { join } from "path"
 import { tmpdir } from "os"
 import { existsSync } from "fs"
@@ -10,6 +10,121 @@ import {
   MissingDependencyError,
 } from "../utils/graph"
 import { listPatchRefs, readPatchRef } from "../utils/patch-refs"
+
+interface SyncState {
+  currentPatch: string
+  remainingPatches: string[]
+  commitMessage: string
+  originalBranch: string
+  applied: number
+}
+
+async function getSyncStatePath(): Promise<string> {
+  const repoRoot = await getRepoRoot()
+  const repoId = await getRepoIdentifier(repoRoot)
+  return join(getDataDir(), repoId, "sync-state.json")
+}
+
+async function saveSyncState(state: SyncState): Promise<void> {
+  const statePath = await getSyncStatePath()
+  await mkdir(join(statePath, ".."), { recursive: true })
+  await writeFile(statePath, JSON.stringify(state, null, 2))
+}
+
+async function loadSyncState(): Promise<SyncState | null> {
+  const statePath = await getSyncStatePath()
+  if (!existsSync(statePath)) return null
+  const content = await readFile(statePath, "utf-8")
+  return JSON.parse(content)
+}
+
+async function clearSyncState(): Promise<void> {
+  const statePath = await getSyncStatePath()
+  if (existsSync(statePath)) {
+    await rm(statePath)
+  }
+}
+
+export async function syncContinue(): Promise<void> {
+  const state = await loadSyncState()
+  if (!state) {
+    console.error("No sync in progress. Run 'patchwork sync' first.")
+    process.exit(1)
+  }
+
+  const repoRoot = await getRepoRoot()
+  const { config } = await loadConfig(repoRoot)
+
+  // Commit the resolved conflict
+  console.log(`Completing ${state.currentPatch}...`)
+  await exec("git add -A")
+
+  const messagePath = join(tmpdir(), "patchwork-continue-msg.txt")
+  await writeFile(messagePath, state.commitMessage)
+  await exec(`git commit -F "${messagePath}"`)
+  await rm(messagePath)
+
+  let applied = state.applied + 1
+
+  // Continue with remaining patches
+  for (const patchName of state.remainingPatches) {
+    console.log(`Applying ${patchName}...`)
+
+    const patchText = await readPatchRef(patchName)
+    const { message, diff, subject } = parsePatch(patchText)
+    const patchTempDir = await mkdtemp(join(tmpdir(), "patchwork-"))
+    const diffPath = join(patchTempDir, "patch.diff")
+    const messagePath = join(patchTempDir, "patch-message.txt")
+
+    let applyResult: { stdout: string; stderr: string; exitCode: number } | null = null
+
+    try {
+      await writeFile(diffPath, `${diff}\n`)
+      await writeFile(messagePath, `${message}\n`)
+
+      applyResult = await execRaw(`git apply --3way "${diffPath}"`)
+
+      if (applyResult.exitCode === 0) {
+        await exec("git add -A")
+        await exec(`git commit -F "${messagePath}"`)
+        applied++
+      }
+    } finally {
+      await rm(patchTempDir, { recursive: true, force: true })
+    }
+
+    if (!applyResult || applyResult.exitCode !== 0) {
+      const remainingIdx = state.remainingPatches.indexOf(patchName)
+      const newRemaining = state.remainingPatches.slice(remainingIdx + 1)
+
+      await saveSyncState({
+        currentPatch: patchName,
+        remainingPatches: newRemaining,
+        commitMessage: message,
+        originalBranch: state.originalBranch,
+        applied,
+      })
+
+      const safeSubject = subject.replace(/"/g, '\\"')
+      console.error("")
+      console.error(`Failed to apply ${patchName}`)
+      console.error("")
+      console.error("Resolve conflicts, then run:")
+      console.error("  patchwork sync --continue")
+      console.error("")
+      console.error("Or abort with:")
+      console.error("  git reset --hard")
+      console.error(`  git checkout ${state.originalBranch}`)
+      process.exit(1)
+    }
+  }
+
+  await clearSyncState()
+  const buildBranch = config.buildBranch
+  console.log("")
+  console.log(`Successfully applied ${applied} patch(es)`)
+  console.log(`Build branch '${buildBranch}' is ready`)
+}
 
 export async function sync(): Promise<void> {
   const repoRoot = await getRepoRoot()
@@ -138,14 +253,22 @@ export async function sync(): Promise<void> {
     }
 
     if (!applyResult || applyResult.exitCode !== 0) {
-      const safeSubject = subject.replace(/"/g, '\\"')
+      const patchIdx = sortedPatches.indexOf(patchName)
+      const remainingPatches = sortedPatches.slice(patchIdx + 1)
+
+      await saveSyncState({
+        currentPatch: patchName,
+        remainingPatches,
+        commitMessage: message,
+        originalBranch,
+        applied,
+      })
 
       console.error("")
       console.error(`Failed to apply ${patchName}`)
       console.error("")
       console.error("Resolve conflicts, then run:")
-      console.error("  git add -A")
-      console.error(`  git commit -m "${safeSubject}"`)
+      console.error("  patchwork sync --continue")
       console.error("")
       console.error("Or abort with:")
       console.error("  git reset --hard")
@@ -154,6 +277,7 @@ export async function sync(): Promise<void> {
     }
   }
 
+  await clearSyncState()
   console.log("")
   console.log(`Successfully applied ${applied} patch(es)`)
   console.log(`Build branch '${buildBranch}' is ready`)

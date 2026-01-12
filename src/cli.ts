@@ -2,7 +2,7 @@
 
 import { init } from "./commands/init"
 import { exportPatch, type ExportOptions } from "./commands/export"
-import { sync } from "./commands/sync"
+import { sync, syncContinue } from "./commands/sync"
 import { status } from "./commands/status"
 import { drop } from "./commands/drop"
 import {
@@ -24,7 +24,7 @@ Patchwork (ptchwrk) - Manage patches on top of upstream repositories
 Commands:
   init [--tracked]         Initialize Patchwork (default: ~/.local/share/patchwork/)
   export <branch>          Export a branch as a patch
-  sync                     Fetch upstream and apply patches
+  sync [--continue]        Fetch upstream and apply patches
   status                   Show patch status
   drop <patch>...          Remove patch(es)
   push [remote]            Push patch refs to remote (default: origin)
@@ -108,9 +108,15 @@ async function main() {
         await exportPatch(branch, options)
         break
       }
-      case "sync":
-        await sync()
+      case "sync": {
+        const isContinue = args.includes("--continue")
+        if (isContinue) {
+          await syncContinue()
+        } else {
+          await sync()
+        }
         break
+      }
       case "status":
         await status()
         break
