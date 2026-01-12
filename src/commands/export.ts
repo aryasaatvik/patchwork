@@ -1,7 +1,7 @@
 import { exec, getRepoRoot, loadConfig, saveConfig, type PatchMetadata } from "../git"
 import { generateConventionalCommit, isOpencodeRunning } from "../utils/commit-message"
 import { getCommitMessageFromPR, findPRForBranch, getPRDetails, isGHAvailable } from "../utils/github-pr"
-import { storePatchRef, getNextPatchNumber } from "../utils/patch-refs"
+import { storePatchRef, getNextPatchNumber, deletePatchRef } from "../utils/patch-refs"
 
 export interface ExportOptions {
   dependsOn?: string[]
@@ -20,11 +20,30 @@ export async function exportPatch(branch: string, options: ExportOptions = {}): 
     throw new Error(`Branch '${branch}' has no commits ahead of ${upstream}`)
   }
 
-  const nextNumber = await getNextPatchNumber()
-  const paddedNumber = String(nextNumber).padStart(3, "0")
-
   const safeBranchName = branch.replace(/[^a-zA-Z0-9-]/g, "-")
-  const patchName = `${paddedNumber}-${safeBranchName}.patch`
+
+  // Check if a patch for this branch already exists
+  let patchName: string
+  let existingPatchName: string | null = null
+
+  for (const [name, metadata] of Object.entries(config.patches ?? {})) {
+    if (metadata.sourceBranch === branch) {
+      existingPatchName = name
+      break
+    }
+  }
+
+  if (existingPatchName) {
+    // Update existing patch
+    patchName = existingPatchName
+    console.log(`Updating existing patch: ${patchName}`)
+    await deletePatchRef(patchName)
+  } else {
+    // Create new patch
+    const nextNumber = await getNextPatchNumber()
+    const paddedNumber = String(nextNumber).padStart(3, "0")
+    patchName = `${paddedNumber}-${safeBranchName}.patch`
+  }
 
   // Get the diff for all commits (squashed patch)
   const diff = await exec(`git diff --binary $(git merge-base ${upstream} ${branch}) ${branch}`)
@@ -85,9 +104,24 @@ export async function exportPatch(branch: string, options: ExportOptions = {}): 
   // Add to manifest
   const patchMetadata: PatchMetadata = {
     description: options.description ?? finalMessage.split("\n")[0],
+    sourceBranch: branch,
     status: "active",
     baseCommit,
   }
+
+  // When updating existing patch, preserve certain metadata if not overridden
+  if (existingPatchName) {
+    const existingMetadata = config.patches?.[existingPatchName]
+    // Preserve dependencies if not overridden
+    if (!options.dependsOn && existingMetadata?.dependencies) {
+      patchMetadata.dependencies = existingMetadata.dependencies
+    }
+    // Preserve upstreamPR if not overridden
+    if (!prUrl && existingMetadata?.upstreamPR) {
+      patchMetadata.upstreamPR = existingMetadata.upstreamPR
+    }
+  }
+
   if (options.dependsOn && options.dependsOn.length > 0) {
     patchMetadata.dependencies = options.dependsOn
   }

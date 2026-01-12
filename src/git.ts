@@ -32,6 +32,7 @@ const PatchStatusSchema = z.enum(["active", "merged", "abandoned"])
 
 const PatchMetadataSchema = z.object({
   description: z.string().optional(),
+  sourceBranch: z.string().optional(),
   dependencies: z.array(z.string()).optional(),
   upstreamPR: z.string().optional(),
   status: PatchStatusSchema.optional(),
