@@ -10,6 +10,17 @@ import {
   MissingDependencyError,
 } from "../utils/graph"
 import { listPatchRefs, readPatchRef } from "../utils/patch-refs"
+import {
+  saveUserRerereCache,
+  restoreUserRerereCache,
+  clearRerereCache,
+  enableRerere,
+  listLocalRerereEntries,
+  restoreRerereFromRefs,
+  captureNewRerereEntries,
+  storeRerereRef,
+  fetchRerereRefs,
+} from "../utils/rerere-cache"
 
 interface SyncState {
   currentPatch: string
@@ -17,6 +28,9 @@ interface SyncState {
   commitMessage: string
   originalBranch: string
   applied: number
+  // Rerere cache state
+  rerereHashesBeforeSync: string[]
+  userRerereCachePath: string | null
 }
 
 async function getSyncStatePath(): Promise<string> {
@@ -54,6 +68,18 @@ export async function syncContinue(): Promise<void> {
 
   const repoRoot = await getRepoRoot()
   const { config } = await loadConfig(repoRoot)
+
+  // Run git rerere to record the resolution before committing
+  await execRaw("git rerere")
+
+  // Capture new rerere entries created from this resolution
+  const newRerereHashes = await captureNewRerereEntries(state.rerereHashesBeforeSync)
+  if (newRerereHashes.length > 0) {
+    console.log(`Recording ${newRerereHashes.length} conflict resolution(s)...`)
+    for (const hash of newRerereHashes) {
+      await storeRerereRef(hash)
+    }
+  }
 
   // Commit the resolved conflict
   console.log(`Completing ${state.currentPatch}...`)
@@ -97,15 +123,19 @@ export async function syncContinue(): Promise<void> {
       const remainingIdx = state.remainingPatches.indexOf(patchName)
       const newRemaining = state.remainingPatches.slice(remainingIdx + 1)
 
+      // Update rerere hashes to include any new ones from previous resolutions
+      const currentRerereHashes = await listLocalRerereEntries()
+
       await saveSyncState({
         currentPatch: patchName,
         remainingPatches: newRemaining,
         commitMessage: message,
         originalBranch: state.originalBranch,
         applied,
+        rerereHashesBeforeSync: currentRerereHashes,
+        userRerereCachePath: state.userRerereCachePath,
       })
 
-      const safeSubject = subject.replace(/"/g, '\\"')
       console.error("")
       console.error(`Failed to apply ${patchName}`)
       console.error("")
@@ -118,6 +148,9 @@ export async function syncContinue(): Promise<void> {
       process.exit(1)
     }
   }
+
+  // Restore user's original rerere cache
+  await restoreUserRerereCache(state.userRerereCachePath)
 
   await clearSyncState()
   const buildBranch = config.buildBranch
@@ -134,6 +167,15 @@ export async function sync(): Promise<void> {
 
   console.log(`Fetching ${config.upstream.remote}...`)
   await exec(`git fetch ${config.upstream.remote}`)
+
+  // Set up rerere for conflict resolution persistence
+  console.log("Setting up conflict resolution cache...")
+  const userRerereCachePath = await saveUserRerereCache()
+  await clearRerereCache()
+  await fetchRerereRefs(config.remote)
+  await restoreRerereFromRefs()
+  await enableRerere()
+  const rerereHashesBeforeSync = await listLocalRerereEntries()
 
   // Get all patches from refs
   const allPatchNames = await listPatchRefs()
@@ -256,12 +298,17 @@ export async function sync(): Promise<void> {
       const patchIdx = sortedPatches.indexOf(patchName)
       const remainingPatches = sortedPatches.slice(patchIdx + 1)
 
+      // Get current rerere hashes (may have grown from previous resolutions)
+      const currentRerereHashes = await listLocalRerereEntries()
+
       await saveSyncState({
         currentPatch: patchName,
         remainingPatches,
         commitMessage: message,
         originalBranch,
         applied,
+        rerereHashesBeforeSync: currentRerereHashes,
+        userRerereCachePath,
       })
 
       console.error("")
@@ -276,6 +323,9 @@ export async function sync(): Promise<void> {
       process.exit(1)
     }
   }
+
+  // Restore user's original rerere cache
+  await restoreUserRerereCache(userRerereCachePath)
 
   await clearSyncState()
   console.log("")

@@ -15,6 +15,7 @@ import {
 } from "./commands/deps"
 import { checkMerged } from "./commands/check-merged"
 import { resolve } from "./commands/resolve"
+import { rerereList, rerereForget, rerereClear } from "./commands/rerere"
 import { pushPatchRefs, fetchPatchRefs } from "./utils/patch-refs"
 import { getRepoRoot, loadConfig } from "./git"
 
@@ -32,6 +33,7 @@ Commands:
   deps                     Manage patch dependencies (subcommands: add, remove, graph)
   check-merged [--update]  Check if upstream PRs have merged
   resolve [--patch]        Resolve merge conflicts
+  rerere                   Manage stored conflict resolutions (subcommands: list, forget, clear)
 
 Export Options:
   --depends-on <patch>     Add dependency (can be used multiple times)
@@ -226,6 +228,28 @@ async function main() {
             console.error("  ptchwrk deps list <patch>")
             console.error("  ptchwrk deps set-pr <patch> <pr-url>")
             console.error("  ptchwrk deps set-status <patch> <active|merged|abandoned>")
+            process.exit(1)
+        }
+        break
+      }
+      case "rerere": {
+        const subcommand = args[1]
+        switch (subcommand) {
+          case "list":
+            await rerereList()
+            break
+          case "forget":
+            await rerereForget(args[2] ?? "")
+            break
+          case "clear":
+            await rerereClear()
+            break
+          default:
+            console.error("Rerere subcommands: list, forget, clear")
+            console.error("")
+            console.error("  patchwork rerere list              List stored resolutions")
+            console.error("  patchwork rerere forget <hash>     Delete a resolution")
+            console.error("  patchwork rerere clear             Clear all resolutions")
             process.exit(1)
         }
         break
