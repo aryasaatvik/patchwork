@@ -70,9 +70,10 @@ export async function patchRefExists(name: string): Promise<boolean> {
 
 /**
  * Push patchwork refs to remote
+ * Uses --force because blob refs can't be incrementally updated
  */
 export async function pushPatchRefs(remote: string = "origin"): Promise<void> {
-  await exec(`git push ${remote} 'refs/patchwork/*:refs/patchwork/*'`)
+  await exec(`git push --force ${remote} 'refs/patchwork/*:refs/patchwork/*'`)
 }
 
 /**
