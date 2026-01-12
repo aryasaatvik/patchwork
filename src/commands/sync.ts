@@ -22,6 +22,37 @@ import {
   fetchRerereRefs,
 } from "../utils/rerere-cache"
 
+/**
+ * Check if all conflicts have been auto-resolved by rerere.
+ * Returns true if there are unmerged files but none have conflict markers.
+ */
+async function tryRerereAutoResolve(): Promise<boolean> {
+  // Run git rerere to apply any stored resolutions
+  await execRaw("git rerere")
+
+  // Get list of unmerged files
+  const statusResult = await execRaw("git status --porcelain")
+  const unmergedFiles = statusResult.stdout
+    .split("\n")
+    .filter((line) => line.startsWith("UU "))
+    .map((line) => line.slice(3))
+
+  if (unmergedFiles.length === 0) {
+    return false // No conflicts to resolve
+  }
+
+  // Check if any unmerged file still has conflict markers
+  for (const file of unmergedFiles) {
+    const content = await readFile(file, "utf-8").catch(() => "")
+    if (content.includes("<<<<<<<") || content.includes(">>>>>>>")) {
+      return false // Still has unresolved conflicts
+    }
+  }
+
+  // All conflicts were auto-resolved by rerere
+  return true
+}
+
 interface SyncState {
   currentPatch: string
   remainingPatches: string[]
@@ -103,6 +134,7 @@ export async function syncContinue(): Promise<void> {
     const messagePath = join(patchTempDir, "patch-message.txt")
 
     let applyResult: { stdout: string; stderr: string; exitCode: number } | null = null
+    let patchApplied = false
 
     try {
       await writeFile(diffPath, `${diff}\n`)
@@ -114,12 +146,23 @@ export async function syncContinue(): Promise<void> {
         await exec("git add -A")
         await exec(`git commit -F "${messagePath}"`)
         applied++
+        patchApplied = true
+      } else {
+        // Try rerere auto-resolve
+        const autoResolved = await tryRerereAutoResolve()
+        if (autoResolved) {
+          console.log("  (auto-resolved by rerere)")
+          await exec("git add -A")
+          await exec(`git commit -F "${messagePath}"`)
+          applied++
+          patchApplied = true
+        }
       }
     } finally {
       await rm(patchTempDir, { recursive: true, force: true })
     }
 
-    if (!applyResult || applyResult.exitCode !== 0) {
+    if (!patchApplied) {
       const remainingIdx = state.remainingPatches.indexOf(patchName)
       const newRemaining = state.remainingPatches.slice(remainingIdx + 1)
 
@@ -278,6 +321,7 @@ export async function sync(): Promise<void> {
     const messagePath = join(patchTempDir, "patch-message.txt")
 
     let applyResult: { stdout: string; stderr: string; exitCode: number } | null = null
+    let patchApplied = false
 
     try {
       await writeFile(diffPath, `${diff}\n`)
@@ -289,12 +333,23 @@ export async function sync(): Promise<void> {
         await exec("git add -A")
         await exec(`git commit -F "${messagePath}"`)
         applied++
+        patchApplied = true
+      } else {
+        // Try rerere auto-resolve
+        const autoResolved = await tryRerereAutoResolve()
+        if (autoResolved) {
+          console.log("  (auto-resolved by rerere)")
+          await exec("git add -A")
+          await exec(`git commit -F "${messagePath}"`)
+          applied++
+          patchApplied = true
+        }
       }
     } finally {
       await rm(patchTempDir, { recursive: true, force: true })
     }
 
-    if (!applyResult || applyResult.exitCode !== 0) {
+    if (!patchApplied) {
       const patchIdx = sortedPatches.indexOf(patchName)
       const remainingPatches = sortedPatches.slice(patchIdx + 1)
 
