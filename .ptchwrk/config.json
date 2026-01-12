@@ -1,0 +1,8 @@
+{
+  "upstream": {
+    "remote": "origin",
+    "branch": "main"
+  },
+  "buildBranch": "patchwork-build",
+  "patchDir": "patches"
+}
