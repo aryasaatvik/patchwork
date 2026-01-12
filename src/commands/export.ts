@@ -1,12 +1,17 @@
-import { exec, getRepoRoot, loadConfig, resolvePatchDir } from "../git"
-import { readdir, writeFile } from "fs/promises"
+import { exec, getRepoRoot, loadConfig, saveConfig, type PatchMetadata } from "../git"
 import { generateConventionalCommit, isOpencodeRunning } from "../utils/commit-message"
-import { getCommitMessageFromPR } from "../utils/github-pr"
+import { getCommitMessageFromPR, findPRForBranch, getPRDetails, isGHAvailable } from "../utils/github-pr"
+import { storePatchRef, getNextPatchNumber } from "../utils/patch-refs"
 
-export async function exportPatch(branch: string): Promise<void> {
+export interface ExportOptions {
+  dependsOn?: string[]
+  upstreamPR?: string
+  description?: string
+}
+
+export async function exportPatch(branch: string, options: ExportOptions = {}): Promise<void> {
   const repoRoot = await getRepoRoot()
   const { config, configDir } = await loadConfig(repoRoot)
-  const patchDir = resolvePatchDir(repoRoot, configDir, config.patchDir)
 
   const upstream = `${config.upstream.remote}/${config.upstream.branch}`
 
@@ -15,18 +20,11 @@ export async function exportPatch(branch: string): Promise<void> {
     throw new Error(`Branch '${branch}' has no commits ahead of ${upstream}`)
   }
 
-  const existingPatches = await readdir(patchDir).catch(() => [])
-  const patchNumbers = existingPatches
-    .filter(f => f.endsWith(".patch"))
-    .map(f => parseInt(f.split("-")[0] ?? "0", 10))
-    .filter(n => !isNaN(n))
-  
-  const nextNumber = patchNumbers.length > 0 ? Math.max(...patchNumbers) + 1 : 1
+  const nextNumber = await getNextPatchNumber()
   const paddedNumber = String(nextNumber).padStart(3, "0")
 
   const safeBranchName = branch.replace(/[^a-zA-Z0-9-]/g, "-")
   const patchName = `${paddedNumber}-${safeBranchName}.patch`
-  const patchPath = `${patchDir}/${patchName}`
 
   // Get the diff for all commits (squashed patch)
   const diff = await exec(`git diff --binary $(git merge-base ${upstream} ${branch}) ${branch}`)
@@ -49,7 +47,7 @@ export async function exportPatch(branch: string): Promise<void> {
     commitMessage = await generateConventionalCommit(diff)
     if (commitMessage) {
       source = "ai"
-      console.log("AI-generated commit message:")
+      console.log("Generated commit message:")
       console.log(`  ${commitMessage.split("\n")[0]}`)
     }
   }
@@ -62,13 +60,56 @@ export async function exportPatch(branch: string): Promise<void> {
     console.log("No PR or AI available, using branch-based commit message")
   }
 
-  // Create the patch file with proper headers
+  // Create the patch content with proper headers
   const patchContent = createPatchWithMessage(branch, finalMessage, diff)
-  await writeFile(patchPath, patchContent)
+
+  // Store patch in git refs
+  await storePatchRef(patchName, patchContent)
+
+  // Capture current upstream HEAD for conflict resolution
+  const baseCommit = await exec(`git rev-parse ${upstream}`)
+
+  // Auto-detect PR URL if not specified
+  let prUrl = options.upstreamPR
+  if (!prUrl && (await isGHAvailable())) {
+    const prNumber = await findPRForBranch(branch)
+    if (prNumber) {
+      const prDetails = await getPRDetails(prNumber)
+      if (prDetails?.url) {
+        prUrl = prDetails.url
+        console.log(`Auto-detected PR: ${prUrl}`)
+      }
+    }
+  }
+
+  // Add to manifest
+  const patchMetadata: PatchMetadata = {
+    description: options.description ?? finalMessage.split("\n")[0],
+    status: "active",
+    baseCommit,
+  }
+  if (options.dependsOn && options.dependsOn.length > 0) {
+    patchMetadata.dependencies = options.dependsOn
+  }
+  if (prUrl) {
+    patchMetadata.upstreamPR = prUrl
+  }
+
+  // Update config with new patch
+  config.patches = config.patches ?? {}
+  config.patches[patchName] = patchMetadata
+  await saveConfig(configDir, config)
 
   console.log(`Exported ${commitCount} commit(s) from '${branch}' to:`)
-  console.log(`  ${patchPath}`)
+  console.log(`  refs/patchwork/patches/${patchName}`)
   console.log(`Commit: ${finalMessage.split("\n")[0]}`)
+
+  if (options.dependsOn && options.dependsOn.length > 0) {
+    console.log(`Dependencies: ${options.dependsOn.join(", ")}`)
+  }
+  if (prUrl) {
+    console.log(`Upstream PR: ${prUrl}`)
+  }
 }
 
 function createFallbackCommitMessage(branch: string, safeBranchName: string): string {

@@ -1,10 +1,9 @@
-import { getRepoRoot, loadConfig, getCurrentBranch, resolvePatchDir } from "../git"
-import { readdir, stat } from "fs/promises"
+import { getRepoRoot, loadConfig, getCurrentBranch } from "../git"
+import { listPatchRefs, readPatchRef } from "../utils/patch-refs"
 
 export async function status(): Promise<void> {
   const repoRoot = await getRepoRoot()
   const { config, configDir } = await loadConfig(repoRoot)
-  const patchDir = resolvePatchDir(repoRoot, configDir, config.patchDir)
   const upstream = `${config.upstream.remote}/${config.upstream.branch}`
 
   console.log("Patchwork Status")
@@ -14,22 +13,42 @@ export async function status(): Promise<void> {
   console.log(`Upstream: ${upstream}`)
   console.log(`Build branch: ${config.buildBranch}`)
   console.log(`Current branch: ${await getCurrentBranch()}`)
+  console.log(`Excluded from sync: ${config.exclude?.join(", ") ?? ".patchwork"}`)
   console.log("")
 
-  const patches = (await readdir(patchDir).catch(() => []))
-    .filter(f => f.endsWith(".patch"))
-    .sort()
+  const patchNames = await listPatchRefs()
 
-  if (patches.length === 0) {
+  if (patchNames.length === 0) {
     console.log("No patches")
     return
   }
 
-  console.log(`Patches (${patches.length}):`)
-  for (const patch of patches) {
-    const patchPath = `${patchDir}/${patch}`
-    const stats = await stat(patchPath)
-    const sizeKb = (stats.size / 1024).toFixed(1)
-    console.log(`  ${patch} (${sizeKb} KB)`)
+  console.log(`Patches (${patchNames.length}):`)
+  for (const patchName of patchNames.sort()) {
+    const metadata = config.patches?.[patchName]
+    const status = metadata?.status ?? "active"
+    const statusIcon = status === "active" ? "●" : status === "merged" ? "✓" : "○"
+
+    // Get patch size
+    let sizeInfo = ""
+    try {
+      const content = await readPatchRef(patchName)
+      const sizeKb = (content.length / 1024).toFixed(1)
+      sizeInfo = ` (${sizeKb} KB)`
+    } catch {
+      sizeInfo = ""
+    }
+
+    console.log(`  ${statusIcon} ${patchName}${sizeInfo}`)
+
+    if (metadata?.description) {
+      console.log(`      ${metadata.description}`)
+    }
+    if (metadata?.upstreamPR) {
+      console.log(`      PR: ${metadata.upstreamPR}`)
+    }
+    if (metadata?.dependencies && metadata.dependencies.length > 0) {
+      console.log(`      Depends on: ${metadata.dependencies.join(", ")}`)
+    }
   }
 }
